@@ -16,7 +16,7 @@
       "#test/*": ["../test/*.ts"]
     },
     "outDir": "./build",
-    "noEmit": true
+    "noEmit": false
   },
   "typedocOptions": {
     "entryPoints": ["./src"],
