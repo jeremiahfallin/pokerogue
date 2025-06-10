@@ -1,16 +1,42 @@
 import WebSocket, { WebSocketServer } from 'ws';
-// import { Battle } from './battle'; // Assuming Battle class handles game logic
-// import { GameMode } from './game-mode'; // Assuming GameMode manages overall game flow
+import { GameMode, getGameMode } from '../game-mode';
+import { GameModes } from '../enums/game-modes';
+import { globalScene } from '../global-scene'; // Added import
+import type { Battle, TurnCommand as BattleTurnCommand } from '../battle'; // Renamed to avoid conflict
+import { Command } from '../enums/command';
+import { BattlerIndex } from '../enums/battler-index';
+
+
+// Define a basic TurnCommand interface if not already well-defined
+// This is a simplified version based on potential needs.
+// It might need to be adjusted based on the actual structure in battle.ts or a shared types file.
+interface TurnCommand {
+  command: Command;
+  cursor?: number; // For move_slot or switch_slot
+  // move?: any; // Placeholder for more detailed move info if needed
+  // targets?: BattlerIndex[]; // Placeholder for target info
+}
+
 
 const PORT = 8080; // Port for the WebSocket server
 
 export class PokerogueWebSocketServer {
     private wss: WebSocketServer;
     private client: WebSocket | null = null;
-    // private gameInstance: GameMode | null = null; // Or your main game controller class
+    private gameInstance: GameMode | null = null; // Or your main game controller class
 
-    constructor(/* game: GameMode */) {
-        // this.gameInstance = game;
+    constructor(gameModeId: GameModes = GameModes.CLASSIC) {
+        try {
+            console.log(`Initializing game with mode: ${GameModes[gameModeId]}`);
+            this.gameInstance = getGameMode(gameModeId);
+            console.log('Game instance created successfully.');
+        } catch (error) {
+            console.error('Failed to initialize game instance:', error);
+            // Depending on the desired behavior, we might want to throw the error,
+            // or handle it by setting gameInstance to null or a default fallback.
+            // For now, we'll let it be null and the server might not function correctly.
+            this.gameInstance = null;
+        }
         this.wss = new WebSocketServer({ port: PORT });
         this.initialize();
         console.log('WebSocket server started on ws://localhost:' + PORT); // Changed from template literal
@@ -72,18 +98,88 @@ export class PokerogueWebSocketServer {
             // The Python client sends action_details that already contain action_type, move_slot etc.
             // So we can directly use message.action_details if it matches the expected structure
             // from _format_action in pokerogue_env.py
-            const actionDetails = message.action_details;
-            console.log('Action received:', actionDetails); // Corrected line
+            const actionDetails = message.action_details; // e.g. { action_type: "move", move_slot: 0 }
+            console.log('Action received:', actionDetails);
 
-            // --- TODO: Integrate with actual game logic ---
-            // Example: this.gameInstance.handleRlAction(actionDetails.action_type, actionDetails);
-            // After processing the action in the game, the game should trigger sending an updated state.
-            // For now, we'll send a placeholder state update back.
+            if (!this.gameInstance) {
+                console.error('Game instance not available. Cannot process action.');
+                this.sendError(this.client, 'Game instance not ready.');
+                return;
+            }
 
-            // Simulate game processing delay and send state update
-            setTimeout(() => {
+            const battle = this.gameInstance.getCurrentBattle();
+
+            if (!battle) {
+                console.error('No active battle. Cannot process action.');
+                // Potentially send an error to the client or specific state
+                this.sendError(this.client, 'No active battle.');
+                return;
+            }
+            (globalScene as any).currentBattle = battle; // Set currentBattle in globalScene
+            // Link MockPokemon instances to this battle
+            const gs = globalScene as any;
+            if (gs.mockPlayerField) gs.mockPlayerField.forEach((p: any) => p.currentBattle = battle);
+            if (gs.mockEnemyField) gs.mockEnemyField.forEach((p: any) => p.currentBattle = battle);
+
+            // Translate actionDetails to TurnCommand
+            let translatedCommand: TurnCommand | null = null;
+
+            switch (actionDetails.action_type) {
+                case 'move':
+                    if (typeof actionDetails.move_slot === 'number') {
+                        translatedCommand = {
+                            command: Command.FIGHT,
+                            cursor: actionDetails.move_slot
+                        };
+                    } else {
+                        console.error('Invalid move action: move_slot missing or not a number.');
+                        this.sendError(this.client, 'Invalid move action.');
+                        return;
+                    }
+                    break;
+                case 'switch':
+                    if (typeof actionDetails.switch_slot === 'number') {
+                        translatedCommand = {
+                            command: Command.SWITCH,
+                            cursor: actionDetails.switch_slot
+                        };
+                    } else {
+                        console.error('Invalid switch action: switch_slot missing or not a number.');
+                        this.sendError(this.client, 'Invalid switch action.');
+                        return;
+                    }
+                    break;
+                case 'flee':
+                    translatedCommand = { command: Command.RUN };
+                    break;
+                default:
+                    console.warn('Unknown action_type:', actionDetails.action_type);
+                    this.sendError(this.client, `Unknown action type: ${actionDetails.action_type}`);
+                    return;
+            }
+
+            if (translatedCommand) {
+                // Store the command for PLAYER_1_0. This might need adjustment based on multi-player or AI control.
+                // Also, ensure battle.turnCommands is initialized in the Battle class.
+                // Casting to BattleTurnCommand as it's expected by the Battle class.
+                // This assumes our local TurnCommand is compatible or can be assigned.
+                battle.turnCommands[BattlerIndex.PLAYER_1_0] = translatedCommand as BattleTurnCommand;
+                console.log(`Command for BattlerIndex.PLAYER_1_0 set:`, translatedCommand);
+                console.log('Action relayed to battle object. Attempting to process turn...');
+
+                // Process the turn using GameMode
+                this.gameInstance.processPlayerTurn(battle);
+
+                // Send state update after attempting to process the turn.
+                // For now, this still sends placeholder data.
+                // Ideally, sendStateUpdate would be triggered by the PhaseManager
+                // or after the battle state has been verifiably updated.
                 this.sendStateUpdate();
-            }, 500); // Simulate 0.5s processing time
+
+            } else {
+                // If translatedCommand is null, it means an issue was already handled (error sent to client)
+                // or it was an unknown action type. No further state update needed here.
+            }
 
         } else {
             console.warn('Unknown message type:', message.type);
@@ -93,11 +189,47 @@ export class PokerogueWebSocketServer {
 
     public sendInitialState(ws: WebSocket) {
          if (ws && ws.readyState === WebSocket.OPEN) {
-            // --- TODO: Get actual initial state from the game ---
+            if (!this.gameInstance) {
+                console.error('WebSocketServer: Game instance not available. Cannot start battle for initial state.');
+                this.sendError(ws, 'Game instance not ready. Cannot start game.');
+                // Send a basic state without observation or with an error state
+                const errorState = {
+                    type: 'initial_state',
+                    observation: null, // Or some error-specific observation
+                    info: { message: 'Error: Game instance not available. Cannot start game.' }
+                };
+                ws.send(JSON.stringify(errorState));
+                return;
+            }
+
+            const battle = this.gameInstance.startNewBattle();
+
+            if (!battle) {
+                console.error('WebSocketServer: Failed to start new battle. GlobalScene might be missing components.');
+                this.sendError(ws, 'Critical Error: Failed to start game battle.');
+                // Send a basic state without observation or with an error state
+                const errorState = {
+                    type: 'initial_state',
+                    observation: this.getPlaceholderObservation(), // Keep sending placeholder for now
+                    info: { message: 'Error: Failed to start game battle. Placeholder observation sent.' }
+                };
+                ws.send(JSON.stringify(errorState));
+                // Depending on desired behavior, might want to close connection or prevent further interaction
+                return;
+            }
+
+            console.log('WebSocketServer: Initial battle started successfully.');
+            (globalScene as any).currentBattle = battle; // Set currentBattle in globalScene
+            // Link MockPokemon instances to this battle
+            const gsInitial = globalScene as any;
+            if (gsInitial.mockPlayerField) gsInitial.mockPlayerField.forEach((p: any) => p.currentBattle = battle);
+            if (gsInitial.mockEnemyField) gsInitial.mockEnemyField.forEach((p: any) => p.currentBattle = battle);
+
+            // --- TODO: Get actual initial state from the game (battle.getObservation()) ---
             const initialState = {
                 type: 'initial_state',
-                observation: this.getPlaceholderObservation(),
-                info: { message: 'Welcome to Pokerogue RL Environment!' }
+                observation: this.getPlaceholderObservation(), // Replace with battle.getObservation(BattlerIndex.PLAYER_1_0)
+                info: { message: 'Welcome to Pokerogue RL Environment! Battle started.' }
             };
             console.log('Sending initial state to client.');
             ws.send(JSON.stringify(initialState));

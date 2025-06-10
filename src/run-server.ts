@@ -1,14 +1,26 @@
 // src/run-server.ts
 import { PokerogueWebSocketServer } from './websocket-server.js'; // Added .js extension
+import { initGlobalScene } from './global-scene';
+import { ServerBattleSceneMock } from './server/server-battle-scene-mock';
+// import type { BattleScene } from './battle-scene'; // For casting if needed
 
-const server = new PokerogueWebSocketServer();
+console.log('Pokerogue WebSocket Server runner starting...');
 
-console.log('Pokerogue WebSocket Server runner started. Listening on ws://localhost:8080.');
+// Initialize the mock globalScene
+const mockScene = new ServerBattleSceneMock();
+initGlobalScene(mockScene as any); // Using 'as any' for now
+// Or: initGlobalScene(mockScene as unknown as BattleScene);
+
+
+// Then, instantiate the server
+const server = new PokerogueWebSocketServer(); // GameMode.CLASSIC will be used by default
+
+console.log('Pokerogue WebSocket Server runner started. Listening on ws://localhost:8080.'); // Corrected log message
 console.log('Press Ctrl+C to shut down the server.');
 
 // Keep the process alive until explicitly closed or error
 process.on('SIGINT', () => {
-    console.log('SIGINT received. Shutting down server...');
+    console.log('SIGINT received, shutting down server...'); // Corrected log message
     server.close();
     // Allow time for server.close() to complete its async operations if any
     setTimeout(() => {

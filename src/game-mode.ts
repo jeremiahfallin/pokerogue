@@ -16,6 +16,8 @@ import { globalScene } from "#app/global-scene";
 import { getDailyStartingBiome } from "./data/daily-run";
 import { CLASSIC_MODE_MYSTERY_ENCOUNTER_WAVES, CHALLENGE_MODE_MYSTERY_ENCOUNTER_WAVES } from "./constants";
 import { GameModes } from "#enums/game-modes";
+import { Battle } from './battle'; // Ensured Battle is imported
+import { BattleType } from './enums/battle-type'; // Added BattleType import
 
 interface GameModeConfig {
   isClassic?: boolean;
@@ -48,9 +50,13 @@ export class GameMode implements GameModeConfig {
   public hasMysteryEncounters: boolean;
   public minMysteryEncounterWave: number;
   public maxMysteryEncounterWave: number;
+  public currentBattle: Battle | null = null; // Added property
+  public waveIndex: number = 0; // Added waveIndex property
 
   constructor(modeId: GameModes, config: GameModeConfig, battleConfig?: FixedBattleConfigs) {
     this.modeId = modeId;
+    this.currentBattle = null; // Initialize currentBattle
+    this.waveIndex = 0; // Initialize waveIndex
     this.challenges = [];
     Object.assign(this, config);
     if (this.isChallenge) {
@@ -375,6 +381,54 @@ export class GameMode implements GameModeConfig {
         return i18next.t("gameMode:dailyRun");
       case GameModes.CHALLENGE:
         return i18next.t("gameMode:challenge");
+    }
+  }
+
+  getCurrentBattle(): Battle | null {
+    if (!this.currentBattle) {
+      console.warn('GameMode: getCurrentBattle() called but currentBattle is null.');
+    }
+    return this.currentBattle;
+  }
+
+  public startNewBattle(): Battle | null {
+    try {
+      this.waveIndex++;
+      const newBattle = new Battle(this, this.waveIndex, BattleType.WILD, undefined, false);
+      this.currentBattle = newBattle;
+      this.currentBattle.incrementTurn(); // Prepare for the first turn
+      console.log(`GameMode: Started new battle for wave ${this.waveIndex}.`);
+      return this.currentBattle;
+    } catch (error) {
+      console.error(`GameMode: Failed to start new battle for wave ${this.waveIndex}. Error:`, error);
+      this.currentBattle = null;
+      return null;
+    }
+  }
+
+  public processPlayerTurn(battle: Battle): void {
+    console.log(`GameMode: processPlayerTurn called for wave ${this.waveIndex}`); // Use this.waveIndex as battle might be null if called incorrectly
+    try {
+      if (!globalScene.phaseManager) {
+          console.error("GameMode: globalScene.phaseManager is not available!");
+          return;
+      }
+
+      // TODO: Placeholder for enemy AI to set their commands in battle.turnCommands
+      // For now, assume enemy might have a default action or this is handled by EnemyCommandPhase
+
+      globalScene.phaseManager.clearPhaseQueue();
+      // Pass necessary arguments if TurnInitPhase constructor needs them (currently it doesn't in the actual code)
+      // The actual TurnInitPhase constructor takes (battle: Battle, reportMode?: boolean)
+      // For the mock, we are calling it with no args for now, which the mock create handles.
+      // If the actual phase is used, it would need `battle` passed to pushNew.
+      globalScene.phaseManager.pushNew("TurnInitPhase", battle); // Pass battle here
+      globalScene.phaseManager.shiftPhase(); // Start processing the queue
+
+      console.log("GameMode: Initiated turn processing via PhaseManager.");
+
+    } catch (error) {
+      console.error("GameMode: Error during processPlayerTurn:", error);
     }
   }
 }
