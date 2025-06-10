@@ -7,12 +7,14 @@
     "start": "vite",
     "start:dev": "vite --mode development",
     "build": "vite build",
+    "build:tsc": "tsc",
     "build:beta": "vite build --mode beta",
     "preview": "vite preview",
     "test": "vitest run --no-isolate",
     "test:cov": "vitest run --coverage --no-isolate",
     "test:watch": "vitest watch --coverage --no-isolate",
     "test:silent": "vitest run --silent --no-isolate",
+    "test:create": "node scripts/create-test/create-test.js",
     "typecheck": "tsc --noEmit",
     "eslint": "eslint --fix .",
     "eslint-ci": "eslint .",
@@ -21,7 +23,6 @@
     "docs": "typedoc",
     "depcruise": "depcruise src",
     "depcruise:graph": "depcruise src --output-type dot | node dependency-graph.js > dependency-graph.svg",
-    "create-test": "node ./create-test-boilerplate.js",
     "postinstall": "npx lefthook install && npx lefthook run post-merge",
     "update-version:patch": "npm version patch --force --no-git-tag-version",
     "update-version:minor": "npm version minor --force --no-git-tag-version",
@@ -64,7 +65,8 @@
     "json-stable-stringify": "^1.2.0",
     "jszip": "^3.10.1",
     "phaser": "^3.88.2",
-    "phaser3-rex-plugins": "^1.80.15"
+    "phaser3-rex-plugins": "^1.80.15",
+    "ws": "^8.x.x"
   },
   "engines": {
     "node": ">=22.0.0"

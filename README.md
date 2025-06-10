@@ -31,6 +31,10 @@ You can find the auto-generated documentation [here](https://pagefaultgames.gith
 For information on enemy AI, check out the [enemy-ai.md](./docs/enemy-ai.md) file.
 For detailed guidelines on documenting your code, refer to the [comments.md](./docs/comments.md) file.
 
+## Reinforcement Learning with Gymnasium
+
+This repository includes a Gymnasium environment for training RL agents to play Pokerogue. For details on setup and usage, please see the [Gymnasium Environment Documentation](gymnasium_env_readme.md).
+
 ### ❔ FAQ
 
 **How do I test a new _______?**

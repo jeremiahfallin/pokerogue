@@ -40,6 +40,9 @@ coverage
 # Local Documentation
 /typedoc
 
+# Build output
+/build/
+
 /dependency-graph.svg
 /.vs
 
